@@ -215,6 +215,8 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
         <option value="pt_BR-jeff-medium">Jeff (Piper, roda no navegador)</option>
         <option value="pt_BR-edresson-low">Edresson (Piper, roda no navegador)</option>
         <option value="razo">Razo (experimental, comunidade)</option>
+        <option value="gemini-tts">Gemini TTS direto (pode não funcionar no Safari)</option>
+        <option value="gemini-tts-server">Gemini TTS via servidor (funciona em qualquer navegador)</option>
       </select>
       <button class="sb-btn" id="save-piper-btn" title="Salvar escolha de voz">💾</button>
     </div>
@@ -566,6 +568,142 @@ function pcmToWavBlob(pcmFloat32, sampleRate){
   return new Blob([buffer], { type: "audio/wav" });
 }
 
+// ---------- Gemini TTS nativo (funciona em qualquer navegador, inclusive Safari/iOS) ----------
+function base64ToArrayBuffer(base64){
+  var binary = atob(base64);
+  var bytes = new Uint8Array(binary.length);
+  for(var i=0;i<binary.length;i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+function wrapPcm16AsWav(pcmArrayBuffer, sampleRate){
+  var headerBuf = new ArrayBuffer(44);
+  var view = new DataView(headerBuf);
+  function writeString(offset, str){
+    for(var i=0;i<str.length;i++) view.setUint8(offset+i, str.charCodeAt(i));
+  }
+  writeString(0, "RIFF");
+  view.setUint32(4, 36 + pcmArrayBuffer.byteLength, true);
+  writeString(8, "WAVE");
+  writeString(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate*2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  writeString(36, "data");
+  view.setUint32(40, pcmArrayBuffer.byteLength, true);
+  return new Blob([headerBuf, pcmArrayBuffer], { type:"audio/wav" });
+}
+
+function speakGeminiTTSServer(text){
+  busy = true;
+  setOrbState("speaking");
+
+  var omUrl = "", omToken = "";
+  try{
+    omUrl = localStorage.getItem("openmanus_url") || "";
+    omToken = localStorage.getItem("openmanus_token") || "";
+  }catch(e){}
+
+  if(!omUrl){
+    console.warn("Gemini TTS via servidor: OpenManus URL não configurada");
+    speakBrowserFallback(text);
+    return;
+  }
+
+  var controller = new AbortController();
+  var timeoutId = setTimeout(function(){ controller.abort(); }, 30000);
+
+  fetch(omUrl.replace(/\/$/, "") + "/tts", {
+    method:"POST",
+    headers:{ "content-type":"application/json", "x-auth-token": omToken },
+    body: JSON.stringify({ text:text }),
+    signal: controller.signal
+  }).then(function(res){
+    clearTimeout(timeoutId);
+    if(!res.ok){
+      return res.json().catch(function(){ return null; }).then(function(body){
+        throw new Error("tts-servidor-http-" + res.status + ": " + ((body && body.detail) || "sem detalhes"));
+      });
+    }
+    return res.blob();
+  }).then(function(blob){
+    var url = URL.createObjectURL(blob);
+    var player = new Audio(url);
+    player.onended = function(){
+      URL.revokeObjectURL(url);
+      busy = false;
+      setOrbState("idle");
+      startListening();
+    };
+    player.onerror = function(){
+      URL.revokeObjectURL(url);
+      speakBrowserFallback(text);
+    };
+    player.play().catch(function(){ speakBrowserFallback(text); });
+  }).catch(function(err){
+    clearTimeout(timeoutId);
+    console.warn("Gemini TTS via servidor falhou: " + (err && err.message ? err.message : String(err)));
+    speakBrowserFallback(text);
+  });
+}
+
+function speakGeminiTTS(text){
+  busy = true;
+  setOrbState("speaking");
+
+  var apiKey = "";
+  try{
+    apiKey = document.getElementById("api-key-input").value.trim() || localStorage.getItem("gemini_api_key") || "";
+  }catch(e){}
+  if(!apiKey){ speakBrowserFallback(text); return; }
+
+  fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent", {
+    method:"POST",
+    headers:{ "content-type":"application/json", "x-goog-api-key": apiKey },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: "Fale de forma natural, calma e clara, em português do Brasil: " + text }] }],
+      generationConfig:{
+        responseModalities:["AUDIO"],
+        speechConfig:{ voiceConfig:{ prebuiltVoiceConfig:{ voiceName:"Charon" } } }
+      }
+    })
+  }).then(function(res){
+    if(!res.ok) throw new Error("gemini-tts-http-" + res.status);
+    return res.json();
+  }).then(function(data){
+    var cand = data.candidates && data.candidates[0];
+    var part = cand && cand.content && cand.content.parts && cand.content.parts[0];
+    var inline = part && part.inlineData;
+    if(!inline || !inline.data) throw new Error("gemini-tts-sem-audio");
+    var mimeType = inline.mimeType || "audio/L16;codec=pcm;rate=24000";
+    var rateMatch = mimeType.match(/rate=(\d+)/);
+    var sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+    var pcmBuffer = base64ToArrayBuffer(inline.data);
+    var wavBlob = wrapPcm16AsWav(pcmBuffer, sampleRate);
+
+    var url = URL.createObjectURL(wavBlob);
+    var player = new Audio(url);
+    player.onended = function(){
+      URL.revokeObjectURL(url);
+      busy = false;
+      setOrbState("idle");
+      startListening();
+    };
+    player.onerror = function(){
+      URL.revokeObjectURL(url);
+      speakBrowserFallback(text);
+    };
+    player.play().catch(function(){ speakBrowserFallback(text); });
+  }).catch(function(err){
+    console.warn("Gemini TTS falhou (" + (err && err.name) + "): " + (err && err.message));
+    speakBrowserFallback(text);
+  });
+}
+
 function speakRazo(text){
   busy = true;
   setOrbState("speaking");
@@ -625,7 +763,7 @@ function speakRazo(text){
     };
     player.play().catch(function(){ speakBrowserFallback(text); });
   }).catch(function(err){
-    console.warn("Razo TTS falhou, usando voz do navegador:", err);
+    console.warn("Razo TTS falhou, usando voz do navegador: " + (err && err.message ? err.message : String(err)));
     speakBrowserFallback(text);
   });
 }
@@ -650,7 +788,7 @@ function speakPiper(text, voiceId){
     };
     player.play().catch(function(){ speakBrowserFallback(text); });
   }).catch(function(err){
-    console.warn("Piper TTS falhou, usando voz do navegador:", err);
+    console.warn("Piper TTS falhou, usando voz do navegador: " + (err && err.message ? err.message : String(err)));
     speakBrowserFallback(text);
   });
 }
@@ -660,6 +798,14 @@ function speak(text){
 
   var piperVoiceId = "";
   try{ piperVoiceId = localStorage.getItem("piper_voice_id") || ""; }catch(e){}
+  if(piperVoiceId === "gemini-tts-server"){
+    speakGeminiTTSServer(text);
+    return;
+  }
+  if(piperVoiceId === "gemini-tts"){
+    speakGeminiTTS(text);
+    return;
+  }
   if(piperVoiceId === "razo"){
     speakRazo(text);
     return;
