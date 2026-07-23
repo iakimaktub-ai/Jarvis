@@ -625,7 +625,7 @@ async function callClaude(userText){
           "x-api-key": key,
           "anthropic-version":"2023-06-01",
           "anthropic-dangerous-direct-browser-access":"true",
-          "content-type":"application/json"
+          "content-type":"application/json; charset=utf-8"
         },
         signal: controller.signal,
         body: JSON.stringify({
@@ -726,7 +726,7 @@ async function callOpenManus(userText){
     res = await fetch(endpoint.replace(/\/$/,"") + "/run", {
       method:"POST",
       headers:{
-        "content-type":"application/json",
+        "content-type":"application/json; charset=utf-8",
         "x-auth-token": token
       },
       signal: controller.signal,

@@ -87,6 +87,7 @@ def _extract_final_answer(raw: str) -> str:
 
 # --- agora sim, o resto dos imports ---
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -208,7 +209,10 @@ async def run_task(req: TaskRequest, x_auth_token: str = Header(default="")):
     try:
         raw_result = await asyncio.wait_for(agent.run(req.task), timeout=20.0)
         result = _extract_final_answer(raw_result)
-        return {"result": result}
+        return JSONResponse(
+            content={"result": result},
+            media_type="application/json; charset=utf-8"
+        )
     except Exception as e:
         logger.error(f"erro executando tarefa: {e}")
         raise HTTPException(status_code=500, detail=str(e))
