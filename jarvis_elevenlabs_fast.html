@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JARVIS</title>
+<style>
+  :root{
+    --accent: #22d3ee;      /* azul reator */
+    --accent-dim: #22d3ee55;
+    --alert: #f59e0b;       /* usado no estado "processando" */
+    --bg-deep: #05070c;
+    --bg-mid: #0a0f18;
+    --violet: #8b5cf6;
+    --text: #dfeffb;
+  }
+  *{box-sizing:border-box}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg-deep); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  #app{position:fixed; inset:0; display:none;}
+  .screen{
+    position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at center, #101a2c 0%, #05070c 70%);
+    transition:opacity .6s ease; z-index:50;
+  }
+  .brandTitle{
+    font-family:ui-monospace,'SF Mono',Menlo,monospace; font-weight:700;
+    font-size:clamp(32px,7vw,64px); letter-spacing:10px;
+    background:linear-gradient(90deg, var(--accent), var(--violet));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    text-align:center;
+  }
+  .hr-gradient{width:min(70vw,420px); height:2px; margin:22px 0;
+    background:linear-gradient(90deg, transparent, var(--accent), var(--violet), transparent);}
+  .blink{animation:flicker 1.4s ease-in-out infinite; letter-spacing:3px; font-family:ui-monospace,monospace; font-size:13px; opacity:.8;}
+  .ver{margin-top:10px; font-size:11px; opacity:.4; font-family:ui-monospace,monospace; letter-spacing:2px;}
+  @keyframes flicker{0%,100%{opacity:1}50%{opacity:.35}}
+
+  #activateBtn{
+    margin-top:34px; padding:14px 30px; font-family:ui-monospace,monospace; font-size:14px; letter-spacing:2px;
+    background:transparent; color:var(--accent); border:1px solid var(--accent); border-radius:4px; cursor:pointer;
+    box-shadow:0 0 18px var(--accent-dim); transition:.2s;
+  }
+  #activateBtn:hover{background:var(--accent); color:#05070c;}
+  .hint{margin-top:12px; font-size:11px; opacity:.5; letter-spacing:2px; font-family:ui-monospace,monospace;}
+
+  /* ===== INTERFACE PRINCIPAL ===== */
+  #main{position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at center, #101a2c 0%, #05070c 70%);}
+  .grid-overlay{position:absolute; inset:0;
+    background-image:linear-gradient(#1c2b4022 1px, transparent 1px), linear-gradient(90deg,#1c2b4022 1px, transparent 1px);
+    background-size:48px 48px; pointer-events:none;}
+
+  #orbWrap{position:relative; width:min(72vw,560px); height:min(72vw,560px); display:flex; align-items:center; justify-content:center;}
+  .ticksLayer{position:absolute; inset:0; animation:rotCW 70s linear infinite;}
+  .tick{position:absolute; top:50%; left:50%; width:2px; background:var(--ring); transform-origin:center;}
+  @keyframes rotCW{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  @keyframes rotCCW{from{transform:rotate(0)}to{transform:rotate(-360deg)}}
+
+  .ringDashed{position:absolute; inset:15%; border-radius:50%; border:1px dashed var(--ring); opacity:.35; animation:rotCW 18s linear infinite;}
+  .ringArc{position:absolute; inset:7%; border-radius:50%; border:2px solid transparent; border-top-color:var(--ring); border-right-color:var(--ring); opacity:.85; animation:rotCCW 26s linear infinite;}
+
+  .particlesLayer{position:absolute; inset:20%; animation:rotCW 40s linear infinite;}
+  .particle{position:absolute; top:0; left:50%; width:6px; height:6px; border-radius:50%; background:var(--ring);
+    box-shadow:0 0 8px var(--ring); transform:translate(-50%,-3px); opacity:.85;}
+
+  #core{
+    position:relative; width:150px; height:150px; border-radius:50%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
+    border:1.5px solid var(--ring);
+    background:radial-gradient(circle, var(--ring) 0%, transparent 70%);
+    background-color:transparent;
+    box-shadow:0 0 40px var(--ring-dim), inset 0 0 30px var(--ring-dim2);
+    animation:pulseCore 3.2s ease-in-out infinite; cursor:pointer; z-index:5;
+  }
+  @keyframes pulseCore{0%,100%{transform:scale(1); opacity:.9}50%{transform:scale(1.08); opacity:1}}
+  #coreLabel{font-family:ui-monospace,monospace; font-size:13px; letter-spacing:4px; color:var(--ring); text-transform:uppercase;}
+  #coreState{font-family:ui-monospace,monospace; font-size:11px; letter-spacing:2px; color:var(--ring); opacity:.6; margin-top:6px; animation:flicker 2.6s ease-in-out infinite;}
+
+  .processingSweep{position:absolute; inset:0; animation:rotCW 2.2s linear infinite; display:none;}
+  .processingSweep div{position:absolute; top:0; left:50%; width:2px; height:50%;
+    background:linear-gradient(to bottom, var(--ring), transparent); transform-origin:bottom center;}
+
+  #bars{position:absolute; bottom:8%; display:none; align-items:flex-end; gap:3px; height:36px;}
+  #bars div{width:3px; background:var(--ring); border-radius:2px; transform-origin:bottom; animation:waveBar .7s ease-in-out infinite;}
+  @keyframes waveBar{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}
+
+  #syncBox{position:absolute; left:5%; top:50%; transform:translateY(-50%); display:flex; flex-direction:column; gap:12px;
+    font-family:ui-monospace,monospace; color:var(--ring); opacity:.65;}
+  #syncBox .lbl{font-size:10px; letter-spacing:2px;}
+  #syncTrack{width:90px; height:4px; background:#33415555; position:relative; overflow:hidden;}
+  #syncFill{position:absolute; left:0; top:0; height:100%; background:var(--ring); box-shadow:0 0 6px var(--ring); transition:width .6s ease;}
+
+  #stateChips{position:absolute; bottom:6%; left:50%; transform:translateX(-50%); display:flex; gap:8px;}
+  .chip{padding:7px 14px; font-family:ui-monospace,monospace; font-size:10px; letter-spacing:1.5px;
+    border:1px solid var(--ring); border-radius:2px; color:var(--ring); opacity:.5;}
+  .chip.active{background:var(--ring); color:#05070c; opacity:1;}
+
+  /* transcript / status */
+  #hud{position:absolute; top:22px; left:50%; transform:translateX(-50%); text-align:center; max-width:80vw;}
+  #hudName{font-family:ui-monospace,monospace; font-size:15px; letter-spacing:4px; color:var(--ring);}
+  #hudUser{margin-top:8px; font-size:13px; opacity:.75; min-height:18px;}
+  #hudReply{margin-top:4px; font-size:13px; opacity:.9; color:var(--ring); min-height:18px;}
+
+  /* controles inferiores */
+  #controls{position:absolute; bottom:2%; right:3%; display:flex; gap:10px;}
+  #controls button{
+    width:42px; height:42px; border-radius:50%; border:1px solid var(--ring); background:#0a0f18aa; color:var(--ring);
+    cursor:pointer; font-size:16px; display:flex; align-items:center; justify-content:center;
+  }
+  #controls button:hover{background:var(--ring); color:#05070c;}
+
+  #textRow{position:absolute; top:70px; left:50%; transform:translateX(-50%); display:flex; gap:8px; align-items:center;}
+  #textInput{
+    width:min(60vw,340px); padding:8px 12px; background:#0a0f18cc; border:1px solid var(--ring); color:var(--text);
+    border-radius:4px; font-size:12px; outline:none;
+  }
+
+  /* config gear */
+  #cfgBtn{position:absolute; top:18px; right:18px; width:34px; height:34px; border-radius:50%;
+    border:1px solid var(--ring); background:#0a0f18aa; color:var(--ring); cursor:pointer; font-size:15px;}
+  #cfgPanel{position:absolute; top:60px; right:18px; width:280px; background:#0a0f18ee; border:1px solid var(--ring);
+    border-radius:6px; padding:14px; display:none; flex-direction:column; gap:8px; z-index:40;}
+  #cfgPanel label{font-size:10px; letter-spacing:1px; opacity:.7; margin-top:6px;}
+  #cfgPanel input{padding:6px 8px; background:#05070c; border:1px solid #33415588; color:var(--text); border-radius:4px; font-size:12px;}
+  #cfgPanel button{margin-top:10px; padding:8px; background:var(--ring); color:#05070c; border:none; border-radius:4px;
+    cursor:pointer; font-weight:600; font-size:12px;}
+  #errBox{position:absolute; bottom:14%; left:50%; transform:translateX(-50%); color:#ff6b6b; font-size:12px; display:none; text-align:center; max-width:70vw;}
+
+  /* ===== SECOND BRAIN (retrátil) ===== */
+  #sbToggle{position:absolute; top:18px; left:18px; width:34px; height:34px; border-radius:50%;
+    border:1px solid var(--ring); background:#0a0f18aa; color:var(--ring); cursor:pointer; font-size:15px; z-index:30;}
+  #sbWrap{position:absolute; bottom:0; left:0; width:100%; height:58%; background:#05070cf5; border-top:1px solid #22d3ee33;
+    display:flex; flex-direction:column; z-index:35; transform:translateY(100%); transition:transform .35s ease;
+    box-shadow:0 -10px 40px #000000aa;}
+  #sbWrap.open{transform:translateY(0);}
+  #sbTop{display:flex; align-items:center; justify-content:space-between; padding:10px 18px; font-family:ui-monospace,monospace;}
+  #sbTop .ttl{font-size:13px; letter-spacing:2px; color:var(--accent);}
+  #sbTop .sub{font-size:10px; opacity:.55; margin-top:2px;}
+  #sbTop .right{display:flex; gap:8px; align-items:center; font-size:11px; opacity:.8;}
+  #sbTop button{background:transparent; border:1px solid var(--accent); color:var(--accent); border-radius:4px; padding:4px 10px; cursor:pointer; font-size:14px;}
+  #sbSvgHolder{flex:1; overflow:hidden;}
+  #sbLegend{display:flex; flex-wrap:wrap; gap:10px 16px; padding:6px 18px 12px; font-size:10px; font-family:ui-monospace,monospace;}
+  .legendItem{display:flex; align-items:center; gap:5px; opacity:.85;}
+  .legendDot{width:8px; height:8px; border-radius:50%;}
+  #legendOk{color:#34d399; margin-left:auto;}
+
+  /* editor de nota */
+  #noteEditor{position:absolute; z-index:60; top:10%; left:50%; transform:translateX(-50%); width:min(90vw,360px);
+    background:#0a0f18ee; border:1px solid var(--accent); border-radius:8px; padding:16px; display:none; flex-direction:column; gap:8px;}
+  #noteEditor h3{margin:0 0 6px; font-size:13px; letter-spacing:2px; color:var(--accent); font-family:ui-monospace,monospace;}
+  #noteEditor input, #noteEditor select, #noteEditor textarea{
+    background:#05070c; border:1px solid #33415588; color:var(--text); border-radius:4px; padding:8px; font-size:12px; font-family:inherit;}
+  #noteEditor textarea{min-height:70px; resize:vertical;}
+  #noteEditor .row{display:flex; gap:8px;}
+  #noteEditor .row button{flex:1; padding:8px; border-radius:4px; border:none; cursor:pointer; font-size:12px; font-weight:600;}
+  #noteEditor .save{background:var(--accent); color:#05070c;}
+  #noteEditor .del{background:#3a1f24; color:#ff8080; border:1px solid #ff808055 !important;}
+  #noteEditor .cancel{background:transparent; color:var(--text); border:1px solid #33415588 !important;}
+</style>
+</head>
+<body>
+
+<!-- TELA 1: BOOT -->
+<div id="bootScreen" class="screen">
+  <div class="brandTitle">JARVIS</div>
+  <div class="hr-gradient"></div>
+  <div class="blink">SINCRONIZANDO DADOS...</div>
+  <div class="ver">v5.0 · REBUILD</div>
+</div>
+
+<!-- TELA 2: ATIVAÇÃO -->
+<div id="activateScreen" class="screen" style="display:none;">
+  <div class="brandTitle">JARVIS</div>
+  <button id="activateBtn">► ATIVAR SISTEMA</button>
+  <div class="hint">CLIQUE PARA INICIAR</div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div id="main">
+    <div class="grid-overlay"></div>
+
+    <button id="cfgBtn" title="Configurações">⚙</button>
+    <button id="sbToggle" title="Second Brain">🧠</button>
+    <div id="cfgPanel">
+      <label>CHAVE API ANTHROPIC (Claude)</label>
+      <input id="cfgAnthropic" type="password" placeholder="sk-ant-...">
+      <label>CHAVE API ELEVENLABS (voz clonada)</label>
+      <input id="cfgEleven" type="password" placeholder="chave ElevenLabs">
+      <label>VOICE ID (ElevenLabs)</label>
+      <input id="cfgVoiceId" type="text" placeholder="voice_id da voz do Jarvis">
+      <label>ENDPOINT DO SEU SPACE (tarefas + voz Higgsfield)</label>
+      <input id="cfgOpenManus" type="text" placeholder="https://seu-space.hf.space">
+      <label>TOKEN DO SPACE (WRAPPER_AUTH_TOKEN)</label>
+      <input id="cfgOpenManusToken" type="password" placeholder="mesmo token configurado no Space">
+      <button id="cfgSave">SALVAR</button>
+    </div>
+
+    <div id="hud">
+      <div id="hudName">JARVIS</div>
+      <div id="hudUser"></div>
+      <div id="hudReply"></div>
+    </div>
+
+    <div id="textRow">
+      <input id="textInput" type="text" placeholder="ou digite e tecle Enter">
+    </div>
+
+    <div id="orbWrap">
+      <div class="ticksLayer" id="ticksLayer"></div>
+      <div class="ringArc"></div>
+      <div class="ringDashed"></div>
+      <div class="particlesLayer" id="particlesLayer"></div>
+
+      <div id="core">
+        <div id="coreLabel">CORE</div>
+        <div id="coreState">IDLE</div>
+        <div class="processingSweep" id="sweep"><div></div></div>
+      </div>
+
+      <div id="bars"></div>
+    </div>
+
+    <div id="syncBox">
+      <div class="lbl">SYNC</div>
+      <div id="syncTrack"><div id="syncFill" style="width:35%"></div></div>
+    </div>
+
+    <div id="stateChips">
+      <div class="chip" data-s="idle">IDLE</div>
+      <div class="chip" data-s="listening">LISTENING</div>
+      <div class="chip" data-s="processing">PROCESSING</div>
+      <div class="chip" data-s="speaking">SPEAKING</div>
+    </div>
+
+    <div id="controls">
+      <button id="micBtn" title="Microfone">🎤</button>
+      <button id="stopBtn" title="Interromper fala">⏹</button>
+    </div>
+
+    <div id="errBox"></div>
+  </div>
+
+  <div id="sbWrap">
+    <div id="sbTop">
+      <div>
+        <div class="ttl">🧠 SECOND BRAIN</div>
+        <div class="sub" id="sbSub">contexto vivo do Maurício</div>
+      </div>
+      <div class="right">
+        <span id="sbCount">0 notas · 0 áreas</span>
+        <button id="sbAdd" title="Nova nota">+</button>
+        <button id="sbReload" title="Recarregar">⟳</button>
+        <button id="sbClose" title="Fechar">✕</button>
+      </div>
+    </div>
+    <div id="sbSvgHolder"></div>
+    <div id="sbLegend"></div>
+  </div>
+
+  <div id="noteEditor">
+    <h3>NOTA</h3>
+    <input id="neTitle" placeholder="Título">
+    <select id="neArea"></select>
+    <textarea id="neBody" placeholder="Conteúdo"></textarea>
+    <div class="row">
+      <button class="save" id="neSave">SALVAR</button>
+      <button class="del" id="neDel">EXCLUIR</button>
+    </div>
+    <div class="row">
+      <button class="cancel" id="neCancel">CANCELAR</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG — respostas da entrevista com o Maurício
+   ============================================================ */
+const CONFIG = {
+  name: "Jarvis",
+  address: "senhor",
+  themeColor: "azul reator",
+  persona: "formal britânico, com leve ironia inteligente",
+  wakeWord: "jarvis",
+  voiceGender: "masculina",
+  model: "gemini-2.0-flash"
+};
+
+// Rate limit retry constants
+const GEMINI_RATE_LIMIT_MAX_RETRIES = 4;
+const GEMINI_RATE_LIMIT_INITIAL_BACKOFF_MS = 2000;
+const GEMINI_TIMEOUT_MS = 12000;
+const GEMINI_MAX_OUTPUT_TOKENS = 280;
+const GEMINI_HISTORY_LIMIT = 8;
+
+const AREA = {
+  metas:       { label: "Metas",        color: "#fbbf24" },
+  trabalho:    { label: "Carreira",     color: "#ff5547" },
+  projetos:    { label: "Projetos",     color: "#8b7cff" },
+  financas:    { label: "Finanças",     color: "#f7931a" },
+  aprendizado: { label: "Aprendizado",  color: "#2dd4ff" },
+  saude:       { label: "Saúde",        color: "#10b981" },
+  relacoes:    { label: "Relações",     color: "#ec4899" },
+  meta:        { label: "Geral",        color: "#8a90a6" }
+};
+
+let NOTES = [
+  { id:"n1", area:"meta",        title:"Maurício",         body:"50 anos, empresário, sócio das Lojas Barracão. Mora em Santana do Parnaíba/SP." },
+  { id:"n2", area:"metas",       title:"Metas financeiras", body:"Fechar 2026 com R$800.000 investidos em ações. Chegar a R$4.000.000 investidos até o fim de 2029." },
+  { id:"n3", area:"metas",       title:"Metas pessoais",    body:"Comprar o primeiro carro do filho (recurso já guardado). Fazer 2 viagens por ano, em janeiro e junho." },
+  { id:"n4", area:"trabalho",    title:"Carreira",          body:"Diretor de Administração/Estratégia nas Lojas Barracão. Foco atual: implantação do ERP SAP S/4HANA (Projeto Falcon) e do sistema Sênior RH." },
+  { id:"n5", area:"projetos",    title:"Projeto Falcon",    body:"Implantação do ERP SAP S/4HANA nas Lojas Barracão." },
+  { id:"n6", area:"projetos",    title:"Sênior RH",         body:"Implantação do sistema Sênior RH." },
+  { id:"n7", area:"aprendizado", title:"IA",                body:"Estuda Inteligência Artificial. Quer aprender a implantar agentes de IA a custo zero ou quase zero na empresa." },
+  { id:"n8", area:"saude",       title:"Rotina",            body:"Treina 5x por semana, segunda a sexta, das 6h às 7h15. Dorme bem: pelo menos 6h nos dias de semana, mais horas no fim de semana." },
+  { id:"n9", area:"relacoes",    title:"Família",           body:"Família é a prioridade principal. Casado, 2 filhos. Os irmãos são seus sócios no negócio." }
+];
+
+let REL = [
+  ["n1","n2"], ["n1","n8"], ["n1","n9"],
+  ["n2","n3"], ["n2","n4"],
+  ["n3","n9"],
+  ["n4","n5"], ["n4","n6"], ["n4","n7"],
+  ["n7","n5"]
+];
+
+/* ============================================================
+   ESTADO GERAL
+   ============================================================ */
+let appState = "idle"; // idle | listening | processing | speaking
+let busy = false;
+let history = [];
+let recognition = null;
+let currentAudio = null;
+
+const $ = (sel) => document.querySelector(sel);
+
+function loadLocal(){
+  const n = localStorage.getItem("jarvis_notes");
+  if (n){ try{ NOTES = JSON.parse(n); }catch(e){} }
+}
+function saveLocal(){
+  localStorage.setItem("jarvis_notes", JSON.stringify(NOTES));
+}
+loadLocal();
+
+/* ============================================================
+   BOOT / ATIVAÇÃO
+   ============================================================ */
+window.addEventListener("load", () => {
+  setTimeout(() => {
+    $("#bootScreen").style.opacity = "0";
+    setTimeout(() => {
+      $("#bootScreen").style.display = "none";
+      $("#activateScreen").style.display = "flex";
+    }, 600);
+  }, 2200);
+});
+
+$("#activateBtn").addEventListener("click", () => {
+  $("#activateScreen").style.display = "none";
+  $("#app").style.display = "block";
+  buildOrbDecor();
+  setupRecognition();
+  const cfgA = localStorage.getItem("anthropic_key");
+  const cfgE = localStorage.getItem("eleven_key");
+  const cfgV = localStorage.getItem("eleven_voice");
+  const cfgO = localStorage.getItem("openmanus_endpoint");
+  const cfgOT = localStorage.getItem("openmanus_token");
+  if (cfgA) $("#cfgAnthropic").value = cfgA;
+  if (cfgE) $("#cfgEleven").value = cfgE;
+  if (cfgV) $("#cfgVoiceId").value = cfgV;
+  if (cfgO) $("#cfgOpenManus").value = cfgO;
+  if (cfgOT) $("#cfgOpenManusToken").value = cfgOT;
+
+  speak(`Sistemas online. Estou ouvindo, ${CONFIG.address}.`);
+  startListeningLoop();
+});
+
+/* ============================================================
+   DECORAÇÃO DO ORBE (ticks + partículas) — porta do design "Jarvis Core"
+   ============================================================ */
+function buildOrbDecor(){
+  const ticksLayer = $("#ticksLayer");
+  for (let i=0;i<72;i++){
+    const angle = i*5;
+    const big = angle % 15 === 0;
+    const t = document.createElement("div");
+    t.className = "tick";
+    t.style.height = big ? "14px" : "8px";
+    t.style.opacity = big ? "0.7" : "0.3";
+    t.style.transform = `translate(-50%,-50%) rotate(${angle}deg) translateY(-${Math.round((window.innerWidth<600?0.72:1)*274)}px)`;
+    ticksLayer.appendChild(t);
+  }
+  const particlesLayer = $("#particlesLayer");
+  for (let i=0;i<6;i++){
+    const angle = i*60;
+    const wrap = document.createElement("div");
+    wrap.style.position="absolute"; wrap.style.inset="0"; wrap.style.transform=`rotate(${angle}deg)`;
+    const dot = document.createElement("div");
+    dot.className="particle";
+    wrap.appendChild(dot);
+    particlesLayer.appendChild(wrap);
+  }
+  const bars = $("#bars");
+  for (let i=0;i<22;i++){
+    const h = 20 + Math.abs(Math.sin(i*1.4))*60 + ((i%3)*6);
+    const b = document.createElement("div");
+    b.style.height = h+"%";
+    b.style.animationDuration = (0.6+(i%5)*0.12)+"s";
+    b.style.animationDelay = (i*0.05)+"s";
+    bars.appendChild(b);
+  }
+}
+
+function setOrbState(state){
+  appState = state;
+  const root = document.documentElement.style;
+  const isProcessing = state === "processing";
+  const isSpeaking = state === "speaking";
+  const isListening = state === "listening";
+  const ring = isProcessing ? "#f59e0b" : "#22d3ee";
+  root.setProperty("--ring", ring);
+  root.setProperty("--ring-dim", ring+"55");
+  root.setProperty("--ring-dim2", ring+"22");
+
+  $("#coreState").textContent = state.toUpperCase();
+  $("#sweep").style.display = isProcessing ? "block" : "none";
+  $("#bars").style.display = isSpeaking ? "flex" : "none";
+
+  const pulseSpeed = isProcessing ? "0.8s" : isListening ? "1.4s" : isSpeaking ? "0.9s" : "3.2s";
+  $("#core").style.animationDuration = pulseSpeed;
+
+  const syncPct = isProcessing ? 90 : isListening ? 65 : isSpeaking ? 100 : 35;
+  $("#syncFill").style.width = syncPct + "%";
+
+  document.querySelectorAll(".chip").forEach(c=>{
+    c.classList.toggle("active", c.dataset.s === state);
+  });
+}
+setOrbState("idle");
+
+$("#core").addEventListener("click", () => {
+  if (!busy) toggleListening(true);
+});
+
+/* ============================================================
+   VOZ — RECONHECIMENTO (STT nativo)
+   ============================================================ */
+let activated = false; // já ouviu a wake word?
+let listeningOn = false;
+
+function setupRecognition(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR){
+    showError("Este navegador não suporta reconhecimento de voz. Use o campo de texto.");
+    return;
+  }
+  recognition = new SR();
+  recognition.lang = "pt-BR";
+  recognition.continuous = true;
+  recognition.interimResults = false;
+
+  recognition.onresult = (evt) => {
+    if (busy) return;
+    const text = evt.results[evt.results.length-1][0].transcript.trim();
+    handleHeardText(text);
+  };
+  recognition.onerror = (evt) => {
+    if (evt.error === "not-allowed"){
+      showError("Permissão de microfone negada. Habilite o microfone para o Jarvis funcionar por voz.");
+    }
+  };
+  recognition.onend = () => {
+    if (listeningOn && !busy){
+      try{ recognition.start(); }catch(e){}
+    }
+  };
+}
+
+function startListeningLoop(){
+  listeningOn = true;
+  setOrbState("listening");
+  try{ recognition && recognition.start(); }catch(e){}
+}
+
+function toggleListening(force){
+  if (force === true || !listeningOn){
+    startListeningLoop();
+  } else {
+    listeningOn = false;
+    try{ recognition && recognition.stop(); }catch(e){}
+    setOrbState("idle");
+  }
+}
+$("#micBtn").addEventListener("click", () => toggleListening());
+
+function normalize(s){
+  return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+
+function handleHeardText(text){
+  const norm = normalize(text);
+  const wake = normalize(CONFIG.wakeWord);
+
+  if (!activated){
+    if (norm.includes(wake)){
+      activated = true;
+      const rest = norm.split(wake).slice(1).join(" ").trim();
+      const original = text; // aproximação: se sobrar algo após a wake word, processa direto
+      if (rest.length > 2){
+        processCommand(text);
+      } else {
+        $("#hudUser").textContent = "";
+        setOrbState("listening");
+      }
+    }
+    return;
+  }
+  processCommand(text);
+}
+
+$("#textInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && $("#textInput").value.trim()){
+    const v = $("#textInput").value.trim();
+    $("#textInput").value = "";
+    activated = true;
+    processCommand(v);
+  }
+});
+
+/* ============================================================
+   ROTEAMENTO: CLAUDE vs OPENMANUS
+   ============================================================ */
+const OPENMANUS_TRIGGERS = ["pesquis","busca","pesquisar","execute","automatiz","openmanus","tarefa complexa"];
+
+function shouldUseOpenManus(text){
+  const n = normalize(text);
+  return OPENMANUS_TRIGGERS.some(k => n.includes(k));
+}
+
+async function processCommand(text){
+  if (busy) return;
+  busy = true;
+  $("#hudUser").textContent = "Você: " + text;
+  $("#hudReply").textContent = "";
+  setOrbState("processing");
+
+  try{
+    let reply;
+    if (shouldUseOpenManus(text)){
+      reply = await callOpenManus(text);
+    } else {
+      reply = await callClaude(text);
+    }
+    
+    // Early feedback: show response immediately before TTS
+    $("#hudReply").textContent = reply;
+    setOrbState("speaking");
+    
+    await speak(reply);
+  } catch(err){
+    showError(err.message || "Falha ao processar o comando.");
+    setOrbState("idle");
+    busy = false;
+    listeningOn = true;
+    try{ recognition && recognition.start(); }catch(e){}
+  }
+}
+
+/* ---------- CLAUDE ---------- */
+function buildSystemPrompt(){
+  const byArea = {};
+  NOTES.forEach(n => {
+    if (!byArea[n.area]) byArea[n.area] = [];
+    byArea[n.area].push(`- ${n.title}: ${n.body.substring(0, 140)}`);
+  });
+  let brain = "";
+  Object.keys(byArea).slice(0, GEMINI_HISTORY_LIMIT).forEach(a => {
+    const label = (AREA[a] && AREA[a].label) || a;
+    brain += `\n[${label}]\n` + byArea[a].slice(0, 3).join("\n");
+  });
+
+  return `Você é ${CONFIG.name}, um assistente pessoal com personalidade ${CONFIG.persona}. `
+    + `Trate o usuário sempre como "${CONFIG.address}". Responda SEMPRE em português do Brasil, `
+    + `de forma curta e falada (2 a 4 frases), sem emojis e sem markdown, pois a resposta será convertida em voz.\n\n`
+    + `Este é o SECOND BRAIN do usuário — use este contexto para personalizar toda resposta:${brain}\n\n`
+    + `PROTOCOLO DE MEMÓRIA VIVA: se o usuário revelar algo novo e duradouro sobre a vida dele, `
+    + `termine sua resposta com uma linha no formato exato [[SAVE:area|titulo|texto]] `
+    + `(area deve ser uma de: metas, trabalho, projetos, financas, aprendizado, saude, relacoes, meta). `
+    + `Se já existir nota com esse título, ela será atualizada; senão, uma nova nasce. `
+    + `Só inclua essa linha quando houver algo realmente novo para guardar.`;
+}
+
+async function callClaude(userText){
+  const key = localStorage.getItem("anthropic_key");
+  if (!key){
+    openConfig();
+    throw new Error("Cole sua chave da API Anthropic nas configurações (ícone de engrenagem) para o Jarvis pensar.");
+  }
+  
+  history.push({ role:"user", content:userText });
+  
+  // Limitar histórico para melhor performance
+  const limitedHistory = history.slice(-GEMINI_HISTORY_LIMIT);
+
+  let retries = 0;
+  let lastError = null;
+
+  while (retries <= GEMINI_RATE_LIMIT_MAX_RETRIES) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+    
+    try{
+      const t0 = performance.now();
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method:"POST",
+        headers:{
+          "x-api-key": key,
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true",
+          "content-type":"application/json"
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          model: CONFIG.model,
+          max_tokens: GEMINI_MAX_OUTPUT_TOKENS,
+          system: buildSystemPrompt(),
+          messages: limitedHistory
+        })
+      });
+      clearTimeout(timeoutId);
+      const duration = performance.now() - t0;
+      console.info("[Jarvis latency] claude " + Math.round(duration) + "ms");
+
+      if (res.status === 429 || res.status === 500 || res.status === 503){
+        const backoffMs = GEMINI_RATE_LIMIT_INITIAL_BACKOFF_MS * Math.pow(2, retries) + Math.random() * 1000;
+        console.warn(`[Jarvis] ${res.status} - retry #${retries+1}/${GEMINI_RATE_LIMIT_MAX_RETRIES} em ${Math.round(backoffMs)}ms`);
+        showError(`Aguardando... (tentativa ${retries+1}/${GEMINI_RATE_LIMIT_MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, backoffMs));
+        retries++;
+        continue;
+      }
+
+      if (!res.ok){
+        throw new Error("Erro na API do Claude (HTTP " + res.status + "). Verifique sua chave.");
+      }
+      
+      const data = await res.json();
+      let text = (data.content && data.content[0] && data.content[0].text) || "";
+      if (!text) throw new Error("O Claude não retornou uma resposta.");
+
+      history.push({ role:"assistant", content:text });
+      text = extractMemory(text);
+      return text;
+    } catch(e){
+      clearTimeout(timeoutId);
+      lastError = e;
+      
+      if (e.name === "AbortError"){
+        retries++;
+        if (retries <= GEMINI_RATE_LIMIT_MAX_RETRIES){
+          console.warn(`[Jarvis] Timeout - tentativa ${retries}/${GEMINI_RATE_LIMIT_MAX_RETRIES}`);
+          await new Promise(r => setTimeout(r, GEMINI_RATE_LIMIT_INITIAL_BACKOFF_MS * retries));
+          continue;
+        }
+      }
+      
+      throw e;
+    }
+  }
+
+  // Fallback offline se quota esgotada
+  const fallbackMsg = `Achei uma resposta no Second Brain: ${NOTES.filter(n => Math.random() > 0.6).map(n => n.body).join(" ")}`;
+  return fallbackMsg + " (Não tenho informação em tempo real sobre esse assunto. Tente amanhã com uma nova quota, ou use uma chave de API paga.)";
+}
+
+function extractMemory(text){
+  // Detecta e processa [[SAVE:area|titulo|texto]]
+  const saveRegex = /\[\[SAVE:([a-z_]+)\|([^|]+)\|([\s\S]+?)\]\]/;
+  const m = text.match(saveRegex);
+  if (m){
+    const [, area, title, body] = m;
+    upsertNote(area.trim(), title.trim(), body.trim());
+    text = text.replace(saveRegex, "").trim();
+  }
+  return text;
+}
+
+function upsertNote(area, title, body){
+  if (!AREA[area]) area = "meta";
+  const existing = NOTES.find(n => n.title.toLowerCase() === title.toLowerCase());
+  let id;
+  if (existing){
+    existing.area = area; existing.body = body;
+    id = existing.id;
+  } else {
+    id = "n" + (Date.now());
+    NOTES.push({ id, area, title, body });
+  }
+  saveLocal();
+  renderGraph(id);
+}
+
+/* ---------- OPENMANUS ---------- */
+async function callOpenManus(userText){
+  const endpoint = localStorage.getItem("openmanus_endpoint");
+  const token = localStorage.getItem("openmanus_token");
+  if (!endpoint || !token){
+    openConfig();
+    throw new Error("Configure o endereço e o token do seu OpenManus Engine nas configurações para delegar tarefas complexas.");
+  }
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 14000);
+  
+  let res;
+  try{
+    const t0 = performance.now();
+    res = await fetch(endpoint.replace(/\/$/,"") + "/run", {
+      method:"POST",
+      headers:{
+        "content-type":"application/json",
+        "x-auth-token": token
+      },
+      signal: controller.signal,
+      body: JSON.stringify({ task: userText })
+    });
+    const duration = performance.now() - t0;
+    console.info("[Jarvis latency] openmanus " + Math.round(duration) + "ms");
+  } catch(e){
+    clearTimeout(timeoutId);
+    if (e.name === "AbortError"){
+      throw new Error("OpenManus Engine excedeu 14 segundos de timeout. Tente novamente.");
+    }
+    throw new Error("Não consegui conectar ao OpenManus Engine em " + endpoint + ". Verifique se o Space está rodando.");
+  }
+  clearTimeout(timeoutId);
+  
+  if (res.status === 401 || res.status === 403){
+    throw new Error("Token do OpenManus Engine inválido. Confira o WRAPPER_AUTH_TOKEN nas configurações.");
+  }
+  if (!res.ok){
+    throw new Error("O OpenManus Engine respondeu com erro (HTTP " + res.status + ").");
+  }
+  const data = await res.json().catch(()=>({}));
+  return data.result || data.output || data.response || data.answer || JSON.stringify(data) || "Tarefa enviada ao OpenManus.";
+}
+
+/* ============================================================
+   VOZ — SÍNTESE (TTS)
+   Prioridade: ElevenLabs (voz clonada) → fallback: voz nativa do navegador
+   ============================================================ */
+let nativeVoices = [];
+if ("speechSynthesis" in window){
+  speechSynthesis.onvoiceschanged = () => { nativeVoices = speechSynthesis.getVoices(); };
+}
+
+async function speak(text){
+  setOrbState("speaking");
+  const hfEndpoint = localStorage.getItem("openmanus_endpoint");
+  const hfToken = localStorage.getItem("openmanus_token");
+  const key = localStorage.getItem("eleven_key");
+  const voiceId = localStorage.getItem("eleven_voice");
+
+  const ttsMethods = [];
+  
+  if (key && voiceId) {
+    ttsMethods.push(async () => {
+      console.info("[Jarvis] Tentando ElevenLabs TTS...");
+      return speakElevenLabs(text, key, voiceId);
+    });
+  }
+  
+  if (hfEndpoint && hfToken) {
+    ttsMethods.push(async () => {
+      console.info("[Jarvis] Tentando Higgsfield TTS...");
+      return speakHiggsfield(text, hfEndpoint, hfToken);
+    });
+    
+    ttsMethods.push(async () => {
+      console.info("[Jarvis] Tentando Gemini TTS fallback...");
+      return speakGeminiTTS(text, hfEndpoint, hfToken);
+    });
+  }
+  
+  ttsMethods.push(async () => {
+    console.info("[Jarvis] Usando voz nativa do navegador...");
+    return speakNative(text);
+  });
+
+  for (const method of ttsMethods) {
+    try {
+      await method();
+      console.info("[Jarvis] TTS com sucesso");
+      break;
+    } catch (e) {
+      console.warn(`[Jarvis] Falha em TTS: ${e.message}`);
+      continue;
+    }
+  }
+
+  $("#hudReply").textContent = CONFIG.name + ": " + text;
+  setOrbState("idle");
+  busy = false;
+  listeningOn = true;
+  try{ recognition && recognition.start(); }catch(e){}
+}
+
+function speakHiggsfield(text, endpoint, token){
+  return new Promise(async (resolve, reject) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    
+    try{
+      const res = await fetch(endpoint.replace(/\/$/,"") + "/speak", {
+        method:"POST",
+        headers:{ "content-type":"application/json", "x-auth-token": token },
+        signal: controller.signal,
+        body: JSON.stringify({ text })
+      });
+      clearTimeout(timeoutId);
+      
+      if (!res.ok) return reject(new Error("HTTP " + res.status));
+      const data = await res.json();
+      if (!data.audio_url) return reject(new Error("sem audio_url na resposta"));
+      if (currentAudio){ currentAudio.pause(); }
+      currentAudio = new Audio(data.audio_url);
+      currentAudio.onended = () => resolve();
+      currentAudio.onerror = () => reject(new Error("erro ao tocar áudio do Higgsfield"));
+      await currentAudio.play();
+    } catch(e){ 
+      clearTimeout(timeoutId);
+      reject(e); 
+    }
+  });
+}
+
+function speakGeminiTTS(text, endpoint, token){
+  return new Promise(async (resolve, reject) => {
+    try{
+      const res = await fetch(endpoint.replace(/\/$/,"") + "/tts", {
+        method:"POST",
+        headers:{ "content-type":"application/json", "x-auth-token": token },
+        body: JSON.stringify({ text })
+      });
+      if (!res.ok) return reject(new Error("HTTP " + res.status));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (currentAudio){ currentAudio.pause(); }
+      currentAudio = new Audio(url);
+      currentAudio.onended = () => resolve();
+      currentAudio.onerror = () => reject(new Error("erro ao tocar áudio do Gemini TTS"));
+      await currentAudio.play();
+    } catch(e){ reject(e); }
+  });
+}
+
+function speakElevenLabs(text, key, voiceId){
+  return new Promise(async (resolve, reject) => {
+    try{
+      const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+        method:"POST",
+        headers:{
+          "xi-api-key": key,
+          "content-type":"application/json",
+          "accept":"audio/mpeg"
+        },
+        body: JSON.stringify({
+          text,
+          model_id:"eleven_multilingual_v2",
+          voice_settings:{ stability:0.5, similarity_boost:0.75 }
+        })
+      });
+      if (!res.ok) return reject(new Error("HTTP " + res.status));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (currentAudio){ currentAudio.pause(); }
+      currentAudio = new Audio(url);
+      currentAudio.onended = () => resolve();
+      currentAudio.onerror = () => reject(new Error("erro ao tocar áudio"));
+      await currentAudio.play();
+    } catch(e){ reject(e); }
+  });
+}
+
+function speakNative(text){
+  return new Promise((resolve) => {
+    if (!("speechSynthesis" in window)) return resolve();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "pt-BR";
+    const voices = nativeVoices.length ? nativeVoices : speechSynthesis.getVoices();
+    const ptVoices = voices.filter(v => v.lang && v.lang.toLowerCase().startsWith("pt"));
+    const wantMale = CONFIG.voiceGender === "masculina";
+    let chosen = ptVoices.find(v => wantMale ? /male|homem|ricardo|daniel/i.test(v.name) : /female|mulher|luciana/i.test(v.name));
+    if (!chosen) chosen = ptVoices[0];
+    if (chosen) u.voice = chosen;
+    u.onend = () => resolve();
+    u.onerror = () => resolve();
+    speechSynthesis.speak(u);
+  });
+}
+
+$("#stopBtn").addEventListener("click", () => {
+  if (currentAudio){ currentAudio.pause(); currentAudio = null; }
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  setOrbState("idle");
+  busy = false;
+});
+
+/* ============================================================
+   CONFIGURAÇÕES
+   ============================================================ */
+function openConfig(){ $("#cfgPanel").style.display = "flex"; }
+$("#cfgBtn").addEventListener("click", () => {
+  $("#cfgPanel").style.display = $("#cfgPanel").style.display === "flex" ? "none" : "flex";
+});
+$("#cfgSave").addEventListener("click", () => {
+  localStorage.setItem("anthropic_key", $("#cfgAnthropic").value.trim());
+  localStorage.setItem("eleven_key", $("#cfgEleven").value.trim());
+  localStorage.setItem("eleven_voice", $("#cfgVoiceId").value.trim());
+  localStorage.setItem("openmanus_endpoint", $("#cfgOpenManus").value.trim());
+  localStorage.setItem("openmanus_token", $("#cfgOpenManusToken").value.trim());
+  $("#cfgPanel").style.display = "none";
+});
+
+function showError(msg){
+  const box = $("#errBox");
+  box.textContent = msg;
+  box.style.display = "block";
+  setTimeout(()=>{ box.style.display = "none"; }, 6000);
+}
+
+/* ============================================================
+   SECOND BRAIN — GRAFO NEURAL ANIMADO
+   ============================================================ */
+let graphAnimId = null;
+let synapses = [];
+
+function renderGraph(blinkId){
+  const holder = $("#sbSvgHolder");
+  const W = holder.clientWidth || 900, H = holder.clientHeight || 300;
+  const cx = W/2, cy = H/2;
+  const R = Math.min(W,H)/2 - 40;
+
+  const positions = {};
+  NOTES.forEach((n,i) => {
+    const ang = (i / NOTES.length) * Math.PI * 2 - Math.PI/2;
+    positions[n.id] = { x: cx + Math.cos(ang)*R, y: cy + Math.sin(ang)*R*0.72, note:n };
+  });
+
+  const degree = {};
+  REL.forEach(([a,b]) => { degree[a]=(degree[a]||0)+1; degree[b]=(degree[b]||0)+1; });
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" style="display:block">`;
+  svg += `<defs>
+    <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="edgeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>`;
+
+  // raios do núcleo até cada nó
+  REL.forEach(([a,b]) => {
+    const pa = positions[a], pb = positions[b];
+    if (!pa || !pb) return;
+    const ctrlX = cx + (( (pa.x+pb.x)/2 ) - cx) * 0.65;
+    const ctrlY = cy + (( (pa.y+pb.y)/2 ) - cy) * 0.65;
+    svg += `<path class="edge" d="M ${pa.x} ${pa.y} Q ${ctrlX} ${ctrlY} ${pb.x} ${pb.y}"
+      fill="none" stroke="url(#edgeGrad)" stroke-width="1.4" stroke-dasharray="6 5" opacity="0.55"/>`;
+  });
+
+  NOTES.forEach(n => {
+    const p = positions[n.id];
+    const color = (AREA[n.area] && AREA[n.area].color) || "#8a90a6";
+    const size = 16 + Math.min((degree[n.id]||0), 5) * 4;
+    svg += `<line x1="${cx}" y1="${cy}" x2="${p.x}" y2="${p.y}" stroke="${color}" stroke-width="0.6" opacity="0.25"/>`;
+  });
+
+  // núcleo
+  svg += `<circle cx="${cx}" cy="${cy}" r="26" fill="url(#coreGrad)"/>`;
+  svg += `<text x="${cx}" y="${cy+5}" text-anchor="middle" font-size="16" filter="url(#glow)">🧠</text>`;
+
+  NOTES.forEach(n => {
+    const p = positions[n.id];
+    const color = (AREA[n.area] && AREA[n.area].color) || "#8a90a6";
+    const size = 16 + Math.min((degree[n.id]||0), 5) * 4;
+    const blinking = n.id === blinkId;
+    svg += `<g class="node" data-id="${n.id}" style="cursor:pointer">
+      <circle cx="${p.x}" cy="${p.y}" r="${size+6}" fill="none" stroke="${color}" stroke-width="1" opacity="0.35">
+        ${blinking ? '<animate attributeName="r" values="'+size+';'+(size+14)+';'+size+'" dur="0.9s" repeatCount="2"/>' : ''}
+      </circle>
+      <circle cx="${p.x}" cy="${p.y}" r="${size}" fill="${color}" opacity="0.9" filter="url(#glow)"/>
+      <text x="${p.x}" y="${p.y+size+14}" text-anchor="middle" font-size="10" fill="${color}" font-family="ui-monospace,monospace">${n.title}</text>
+    </g>`;
+  });
+
+  svg += `</svg>`;
+  holder.innerHTML = svg; // CRÍTICO: injeta via innerHTML de uma DIV, nunca do <svg> diretamente
+
+  holder.querySelectorAll(".node").forEach(g => {
+    g.addEventListener("click", () => openNoteEditor(g.dataset.id));
+  });
+
+  // legenda
+  const areasPresentes = [...new Set(NOTES.map(n=>n.area))];
+  let legendHtml = areasPresentes.map(a => {
+    const info = AREA[a] || { label:a, color:"#8a90a6" };
+    return `<div class="legendItem"><span class="legendDot" style="background:${info.color}"></span>${info.label}</div>`;
+  }).join("");
+  legendHtml += `<div id="legendOk">✓ contexto injetado em todos os comandos do ${CONFIG.name}</div>`;
+  $("#sbLegend").innerHTML = legendHtml;
+
+  $("#sbCount").textContent = `${NOTES.length} notas · ${areasPresentes.length} áreas`;
+
+  startSynapses(positions);
+}
+
+function startSynapses(positions){
+  if (graphAnimId) cancelAnimationFrame(graphAnimId);
+  const svgEl = $("#sbSvgHolder svg");
+  if (!svgEl || REL.length === 0) return;
+
+  synapses = Array.from({length:12}, () => spawnSynapse(positions));
+
+  function tick(){
+    synapses.forEach(s => {
+      s.t += s.speed;
+      if (s.t >= 1) Object.assign(s, spawnSynapse(positions));
+      const {a,b} = s;
+      const ctrlX = ( (a.x+b.x)/2 );
+      const ctrlY = ( (a.y+b.y)/2 );
+      const x = (1-s.t)*(1-s.t)*a.x + 2*(1-s.t)*s.t*ctrlX + s.t*s.t*b.x;
+      const y = (1-s.t)*(1-s.t)*a.y + 2*(1-s.t)*s.t*ctrlY + s.t*s.t*b.y;
+      if (!s.el){
+        s.el = document.createElementNS("http://www.w3.org/2000/svg","circle");
+        s.el.setAttribute("r","2.6");
+        s.el.setAttribute("fill","#ffffff");
+        svgEl.appendChild(s.el);
+      }
+      s.el.setAttribute("cx",x); s.el.setAttribute("cy",y);
+      s.el.setAttribute("opacity", (Math.sin(s.t*Math.PI)).toFixed(2));
+    });
+    graphAnimId = requestAnimationFrame(tick);
+  }
+  tick();
+}
+function spawnSynapse(positions){
+  if (REL.length === 0) return { t:0, speed:0.01, a:{x:0,y:0}, b:{x:0,y:0} };
+  const pair = REL[Math.floor(Math.random()*REL.length)];
+  const a = positions[pair[0]], b = positions[pair[1]];
+  if (!a || !b) return spawnSynapse(positions);
+  return { t:0, speed: 0.006 + Math.random()*0.01, a, b };
+}
+
+$("#sbToggle").addEventListener("click", () => {
+  const wrap = $("#sbWrap");
+  const opening = !wrap.classList.contains("open");
+  wrap.classList.toggle("open");
+  if (opening) renderGraph();
+});
+$("#sbClose").addEventListener("click", () => {
+  $("#sbWrap").classList.remove("open");
+  if (graphAnimId){ cancelAnimationFrame(graphAnimId); graphAnimId = null; }
+});
+$("#sbReload").addEventListener("click", () => renderGraph());
+window.addEventListener("resize", () => {
+  if ($("#sbWrap").classList.contains("open")) renderGraph();
+});
+
+/* editor de nota */
+let editingId = null;
+function openNoteEditor(id){
+  editingId = id;
+  const note = NOTES.find(n => n.id === id);
+  const sel = $("#neArea");
+  sel.innerHTML = Object.keys(AREA).map(k => `<option value="${k}">${AREA[k].label}</option>`).join("");
+  if (note){
+    $("#neTitle").value = note.title;
+    sel.value = note.area;
+    $("#neBody").value = note.body;
+  } else {
+    $("#neTitle").value = "";
+    $("#neBody").value = "";
+  }
+  $("#noteEditor").style.display = "flex";
+}
+$("#sbAdd").addEventListener("click", () => openNoteEditor(null));
+$("#neCancel").addEventListener("click", () => { $("#noteEditor").style.display = "none"; });
+$("#neSave").addEventListener("click", () => {
+  const title = $("#neTitle").value.trim();
+  const area = $("#neArea").value;
+  const body = $("#neBody").value.trim();
+  if (!title) return;
+  if (editingId){
+    const n = NOTES.find(x => x.id === editingId);
+    if (n){ n.title=title; n.area=area; n.body=body; }
+  } else {
+    NOTES.push({ id:"n"+Date.now(), area, title, body });
+  }
+  saveLocal();
+  $("#noteEditor").style.display = "none";
+  renderGraph(editingId);
+});
+$("#neDel").addEventListener("click", () => {
+  if (editingId){
+    NOTES = NOTES.filter(n => n.id !== editingId);
+    saveLocal();
+  }
+  $("#noteEditor").style.display = "none";
+  renderGraph();
+});
+</script>
+</body>
+</html>
